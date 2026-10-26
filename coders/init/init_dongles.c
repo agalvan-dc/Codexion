@@ -6,32 +6,27 @@
 /*   By: agalvan- <agalvan-@student.42madrid.com>   +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/25 18:10:32 by agalvan-          #+#    #+#             */
-/*   Updated: 2026/10/25 18:11:53 by agalvan-         ###   ########.fr       */
+/*   Updated: 2026/10/26 12:00:00 by agalvan-         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../coders.h"
 
-t_dongle	*init_dongles(t_table *table)
+bool	init_dongles(t_table *table)
 {
-	size_t		i;
-	t_dongle	*dongles;
-	int			nb_dongle;
+	int	i;
 
-	nb_dongle = table->nb_cod;
-	if (nb_dongle < 1)
-		return (NULL);
-	dongles = malloc(sizeof(t_dongle) * (size_t)nb_dongle);
-	if (!dongles)
-		return (NULL);
+	table->dongles = malloc(sizeof(t_dongle) * (size_t)table->nb_cod);
+	if (!table->dongles)
+		return (false);
+	memset(table->dongles, 0, sizeof(t_dongle) * (size_t)table->nb_cod);
 	i = 0;
-	while (i < (size_t)nb_dongle)
+	while (i < table->nb_cod)
 	{
-		dongles[i].in_use = false;
-		dongles[i].available_at = 0;
-		if (pthread_mutex_init(&dongles[i].mutex, NULL))
-			return (NULL);
+		if (pthread_mutex_init(&table->dongles[i].mutex, NULL))
+			return (false);
+		table->dongle_ready++;
 		i++;
 	}
-	return (dongles);
+	return (true);
 }

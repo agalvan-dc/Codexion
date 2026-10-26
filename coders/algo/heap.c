@@ -6,7 +6,7 @@
 /*   By: agalvan- <agalvan-@student.42madrid.com>   +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/24 14:00:00 by agalvan-          #+#    #+#             */
-/*   Updated: 2026/10/25 17:42:04 by agalvan-         ###   ########.fr       */
+/*   Updated: 2026/10/26 12:00:00 by agalvan-         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -66,7 +66,6 @@ void	heap_destroy(t_heap *heap)
 {
 	if (!heap)
 		return ;
-	if (heap->items)
-		free(heap->items);
+	free(heap->items);
 	free(heap);
 }

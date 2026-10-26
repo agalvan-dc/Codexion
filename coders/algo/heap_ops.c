@@ -6,13 +6,20 @@
 /*   By: agalvan- <agalvan-@student.42madrid.com>   +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2026/10/25 17:35:58 by agalvan-          #+#    #+#             */
-/*   Updated: 2026/10/25 17:40:21 by agalvan-         ###   ########.fr       */
+/*   Updated: 2026/10/26 12:00:00 by agalvan-         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-# include "../coders.h"
+#include "../coders.h"
 
+static void	heap_swap(t_heap_item *a, t_heap_item *b)
+{
+	t_heap_item	tmp;
 
+	tmp = *a;
+	*a = *b;
+	*b = tmp;
+}
 
 static bool	heap_less(t_heap *heap, t_heap_item *a, t_heap_item *b)
 {
@@ -29,7 +36,7 @@ static bool	heap_less(t_heap *heap, t_heap_item *a, t_heap_item *b)
 	return (a->coder->id < b->coder->id);
 }
 
- void	heap_bubble_up(t_heap *heap, int idx)
+void	heap_bubble_up(t_heap *heap, int idx)
 {
 	int	parent;
 
@@ -38,30 +45,25 @@ static bool	heap_less(t_heap *heap, t_heap_item *a, t_heap_item *b)
 		parent = (idx - 1) / 2;
 		if (!heap_less(heap, &heap->items[idx], &heap->items[parent]))
 			break ;
-		heap_swap_items(&heap->items[idx], &heap->items[parent]);
+		heap_swap(&heap->items[idx], &heap->items[parent]);
 		idx = parent;
 	}
 }
 
- void	heap_bubble_down(t_heap *heap, int idx)
+void	heap_bubble_down(t_heap *heap, int idx)
 {
-	int	left;
-	int	right;
-	int	smallest;
+	int	child;
 
-	while (1)
+	while (2 * idx + 1 < heap->size)
 	{
-		smallest = idx;
-		left = 2 * idx + 1;
-		right = 2 * idx + 2;
-		if (left < heap->size && heap_less(heap, &heap->items[left], &heap->items[smallest]))
-			smallest = left;
-		if (right < heap->size && heap_less(heap, &heap->items[right], &heap->items[smallest]))
-			smallest = right;
-		if (smallest == idx)
+		child = 2 * idx + 1;
+		if (child + 1 < heap->size
+			&& heap_less(heap, &heap->items[child + 1], &heap->items[child]))
+			child++;
+		if (!heap_less(heap, &heap->items[child], &heap->items[idx]))
 			break ;
-		heap_swap_items(&heap->items[idx], &heap->items[smallest]);
-		idx = smallest;
+		heap_swap(&heap->items[idx], &heap->items[child]);
+		idx = child;
 	}
 }
 
@@ -75,5 +77,3 @@ void	heap_push(t_heap *heap, t_coder *coder, uint64_t request_time)
 	heap_bubble_up(heap, heap->size);
 	heap->size++;
 }
-
-

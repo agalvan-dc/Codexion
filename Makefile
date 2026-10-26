@@ -20,14 +20,22 @@ FT_MALLOC	?= $(HOME)/Documents/ft_malloc/libft_malloc.so
 ARGS		?= 3 1000 200 200 200 1 200 fifo
 
 SRC	=	  coders/core/codexion.c \
-		  coders/core/coders.c \
+		  coders/core/coder.c \
+		  coders/core/dongle_lock.c \
+		  coders/core/dongles.c \
+		  coders/core/log.c \
+		  coders/core/monitor.c \
+		  coders/core/simulation.c \
+		  coders/core/state.c \
+		  coders/core/time.c \
 		  coders/parse/parse.c \
 		  coders/parse/parsing_utils.c \
 		  coders/parse/display.c \
-		  coders/utils/free.c \
+		  coders/init/init_sync.c \
 		  coders/init/init_coders.c \
 		  coders/init/init_dongles.c \
 		  coders/init/init_threads.c \
+		  coders/utils/free.c \
 		  coders/algo/heap.c \
 		  coders/algo/heap_ops.c \
 
