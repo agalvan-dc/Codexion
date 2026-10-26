@@ -28,6 +28,8 @@ void	mark_simulation_end(t_table *table)
 {
 	table->simulation_end = true;
 	broadcast_all(table);
+	if (table->start_ready)
+		pthread_cond_broadcast(&table->start_cond);
 }
 
 void	end_simulation(t_table *table)

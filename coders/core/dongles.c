@@ -46,9 +46,10 @@ void	grant_dongles(t_table *table, uint64_t now)
 		coder->last_comp_start = now;
 		coder->deadline = now + table->ttb;
 		coder->state = ST_COMPILE;
-		log_add(table, coder->id, "has taken a dongle");
-		log_add(table, coder->id, "has taken a dongle");
+		log_add(table, coder->id, "has taken a dongle", CLR_TAKE);
+		log_add(table, coder->id, "has taken a dongle", CLR_TAKE);
 		pthread_cond_broadcast(&coder->cond);
+		mark_even_started(table, coder);
 	}
 }
 

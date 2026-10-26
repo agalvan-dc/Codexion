@@ -19,21 +19,11 @@ bool	init_threads(t_table *table)
 		return (false);
 	table->thread_count = 0;
 	table->monitor_started = false;
+	table->threads_ready = 0;
+	table->start_phase = 0;
+	table->start_even_total = 0;
+	table->start_even_done = 0;
 	return (true);
-}
-
-static void	init_deadlines(t_table *table)
-{
-	int	i;
-
-	i = 0;
-	table->start_ms = now_ms();
-	while (i < table->nb_cod)
-	{
-		table->coders[i].last_comp_start = table->start_ms;
-		table->coders[i].deadline = table->start_ms + table->ttb;
-		i++;
-	}
 }
 
 static bool	spawn_coders(t_table *table)
@@ -57,11 +47,12 @@ static bool	spawn_coders(t_table *table)
 
 bool	start_threads(t_table *table)
 {
-	init_deadlines(table);
 	if (pthread_create(&table->monitor, NULL, monitor_routine, table))
 		return (false);
 	table->monitor_started = true;
-	return (spawn_coders(table));
+	if (!spawn_coders(table))
+		return (false);
+	return (open_start_gate(table));
 }
 
 void	join_threads(t_table *table)

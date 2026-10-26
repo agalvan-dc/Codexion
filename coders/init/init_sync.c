@@ -20,5 +20,8 @@ bool	init_sync(t_table *table)
 	if (pthread_mutex_init(&table->log_mutex, NULL))
 		return (false);
 	table->log_ready = true;
+	if (pthread_cond_init(&table->start_cond, NULL))
+		return (false);
+	table->start_ready = true;
 	return (true);
 }

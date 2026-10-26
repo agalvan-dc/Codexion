@@ -23,6 +23,7 @@ static void	fill_coder(t_coder *coder, t_table *table, int index)
 	coder->left_dongle = index;
 	coder->right_dongle = (index + 1) % table->nb_cod;
 	coder->has_pair = false;
+	coder->completed = false;
 	coder->table = table;
 }
 

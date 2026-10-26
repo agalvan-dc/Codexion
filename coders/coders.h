@@ -26,6 +26,12 @@
 # include "algo/heap.h"
 
 # define LOG_LINE_MAX	128
+# define CLR_RESET		"\033[0m"
+# define CLR_TAKE		"\033[36m"
+# define CLR_COMPILE	"\033[32m"
+# define CLR_DEBUG		"\033[33m"
+# define CLR_REFACTOR	"\033[34m"
+# define CLR_BURN		"\033[1;31m"
 
 typedef struct s_table	t_table;
 
@@ -59,6 +65,7 @@ typedef struct s_coder
 	int				left_dongle;
 	int				right_dongle;
 	bool			has_pair;
+	bool			completed;
 	t_table			*table;
 }	t_coder;
 
@@ -84,6 +91,12 @@ struct s_table
 	int				thread_count;
 	pthread_t		monitor;
 	bool			monitor_started;
+	pthread_cond_t	start_cond;
+	bool			start_ready;
+	int				threads_ready;
+	int				start_phase;
+	int				start_even_total;
+	int				start_even_done;
 	pthread_mutex_t	pool_mutex;
 	pthread_mutex_t	log_mutex;
 	bool			pool_ready;
@@ -104,8 +117,11 @@ bool		start_threads(t_table *table);
 void		join_threads(t_table *table);
 uint64_t	now_ms(void);
 bool		sleep_ms(t_table *table, uint64_t ms);
-void		log_add(t_table *table, int id, const char *msg);
+void		log_add(t_table *table, int id, const char *msg, const char *color);
 bool		enter_state(t_coder *coder, t_state state, const char *msg);
+bool		wait_start_gate(t_coder *coder);
+bool		open_start_gate(t_table *table);
+void		mark_even_started(t_table *table, t_coder *coder);
 bool		request_dongles(t_coder *coder);
 void		release_dongles(t_coder *coder);
 void		grant_dongles(t_table *table, uint64_t now);

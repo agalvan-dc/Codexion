@@ -38,6 +38,8 @@ static void	destroy_dongles(t_table *table)
 
 static void	destroy_sync(t_table *table)
 {
+	if (table->start_ready)
+		pthread_cond_destroy(&table->start_cond);
 	if (table->log_ready)
 		pthread_mutex_destroy(&table->log_mutex);
 	if (table->pool_ready)

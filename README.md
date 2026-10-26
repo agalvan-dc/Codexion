@@ -8,7 +8,8 @@ share USB dongles, and must keep compiling before they burn out.
 
 The program uses POSIX threads, mutexes and condition variables. It implements a
 priority queue (binary heap) to arbitrate dongle requests with either a FIFO or
-an EDF policy.
+an EDF policy. Logs use ANSI colors, and a two-phase startup gate releases even
+coder ids before odd ids once every thread has been created.
 
 ## Description
 
@@ -68,10 +69,12 @@ deterministic.
 ### Compilation
 
 ```sh
-make          # build ./codexion
-make re       # clean and rebuild
-make clean    # remove object and dependency files
-make fclean   # remove objects, dependencies and the binary
+make             # build ./codexion
+make re          # clean and rebuild
+make clean       # remove object and dependency files
+make fclean      # remove objects, dependencies and the binary
+make test        # run the full test battery
+make test-quick  # run functional tests without sanitizers or Valgrind
 ```
 
 The Makefile uses `cc` and compiles with `-Wall -Wextra -Werror -pthread`.
@@ -163,6 +166,12 @@ timestamp_in_ms X burned out
 Timestamps are relative to the start of the simulation. Every line is written by
 a single thread while holding the logging mutex, so lines are never interleaved.
 
+Each line is wrapped in an ANSI color sequence and reset with `\033[0m` before
+the newline. Removing the escape sequences yields exactly the format above.
+Dongle acquisitions are cyan, compiling is green, debugging is yellow,
+refactoring is blue and burnout is bold red. The timestamp is generated while
+the logging mutex is held, so printed timestamps are monotonic.
+
 ## Project structure
 
 ```text
@@ -180,6 +189,7 @@ coders/
 │   ├── log.c
 │   ├── monitor.c
 │   ├── simulation.c
+│   ├── start_gate.c
 │   ├── state.c
 │   └── time.c
 ├── init/
@@ -193,6 +203,8 @@ coders/
 │   └── parsing_utils.c
 └── utils/
     └── free.c
+tests/
+└── test_battery.py
 ```
 
 ### `coders/coders.h`
@@ -203,8 +215,8 @@ The main header. It defines the shared data model and every public prototype:
 - `t_dongle`: a dongle mutex, its busy flag and its cooldown timestamp.
 - `t_coder`: coder identity, timing data, state, condition variable, its two
   dongle indexes and a pointer to the table.
-- `t_table`: global simulation configuration, shared arrays, heap, synchronization
-  primitives and cleanup accounting.
+- `t_table`: global simulation configuration, shared arrays, heap, startup-gate
+  counters, synchronization primitives and cleanup accounting.
 
 Keeping all shared types in one header makes the ownership rules explicit and
 lets each module include only `../coders.h`.
@@ -243,9 +255,10 @@ Prints the usage message to standard error whenever the arguments are invalid.
 
 ### `coders/init/init_sync.c`
 
-Initializes the two global mutexes: `pool_mutex` for the simulation state and
-`log_mutex` for output. It records which mutexes were initialized so cleanup can
-safely destroy only valid objects.
+Initializes the two global mutexes (`pool_mutex` for the simulation state and
+`log_mutex` for output) and the global `start_cond` used by the startup gate. It
+records which primitives were initialized so cleanup can safely destroy only
+valid objects.
 
 ### `coders/init/init_coders.c`
 
@@ -269,10 +282,10 @@ many were initialized successfully.
 
 Creates the thread array and manages the thread lifecycle:
 
-- `init_deadlines` sets the simulation start time and each coder's initial
-  deadline.
 - `spawn_coders` creates one coder thread per coder.
-- `start_threads` starts the monitor first and then the coder threads.
+- `start_threads` starts the monitor first, creates every coder and then opens
+  the startup gate. The gate sets `start_ms` and the initial deadlines only when
+  all coder threads report that they are ready.
 - `join_threads` joins every coder, signals the monitor to stop and joins it.
 
 If a thread creation fails, the simulation is ended immediately, already-created
@@ -327,20 +340,39 @@ The heart of resource arbitration:
 
 The dedicated monitor thread required by the subject. Every millisecond it:
 
-1. Checks whether a coder has exceeded its burnout deadline.
-2. Marks the first burned-out coder, ends the simulation and logs `burned out`.
-3. Calls `grant_dongles` so that cooldown expirations are handled even when no
+1. Waits until the startup gate has initialized the simulation times.
+2. Checks whether a coder has exceeded its burnout deadline.
+3. Marks the first burned-out coder, ends the simulation and logs `burned out`.
+4. Calls `grant_dongles` so that cooldown expirations are handled even when no
    coder is releasing a dongle at that exact moment.
 
 The monitor ignores coders that have already reached the required number of
-compilations.
+compilations, and it does not evaluate deadlines before the simulation starts.
+
+### `coders/core/start_gate.c`
+
+Implements the two-phase startup barrier:
+
+- `wait_start_gate` increments `threads_ready`, waits until all coder threads are
+  created, and then allows even coder ids to leave. Odd ids wait for phase 2.
+- `open_start_gate` waits for `threads_ready == nb_cod`, sets `start_ms` and every
+  initial deadline, and opens phase 1. If there are no even ids, it opens phase 2
+  directly.
+- `mark_even_started` counts successfully granted even coders. Once every even
+  coder has been granted its first dongle pair, it opens phase 2 and wakes the odd
+  coders.
+
+This makes the first arbitration round deterministic: coder `2`, `4`, `6`...
+start before coder `1`, `3`, `5`..., while still letting EDF/FIFO order all
+subsequent requests.
 
 ### `coders/core/simulation.c`
 
 Contains the simulation-level control functions:
 
-- `mark_simulation_end` sets the end flag and broadcasts all coder condition
-  variables.
+- `mark_simulation_end` sets the end flag and broadcasts both the per-coder
+  condition variables and `start_cond`, so threads blocked in the startup gate
+  also leave cleanly.
 - `end_simulation` performs the same operation while taking `pool_mutex`.
 - `simulation_over` provides a thread-safe read of the end flag.
 - `run_simulation` starts and joins the threads.
@@ -349,45 +381,70 @@ Contains the simulation-level control functions:
 
 Defines the coder thread routine:
 
-1. Request a dongle pair.
-2. Log `is compiling` and compile.
-3. Release the pair.
-4. Increment the compile counter and check whether this coder is done.
-5. Log `is debugging` and debug.
-6. Log `is refactoring` and refactor.
-7. Repeat until the coder is done or the simulation ends.
+1. Wait at the startup gate until every thread exists and this coder's parity
+   phase is open.
+2. Request a dongle pair.
+3. Log `is compiling` and compile.
+4. Release the pair.
+5. Increment the compile counter and mark the coder as completed when it reaches
+   `number_of_compiles_required`.
+6. Log `is debugging` and debug.
+7. Log `is refactoring` and refactor.
+8. Stop after that final debug/refactor cycle, or repeat if the coder is not done.
 
-The compile counter is updated under `pool_mutex`. When every coder has reached
-`number_of_compiles_required`, the simulation ends immediately.
+The compile counter is updated under `pool_mutex`. A coder that reaches the
+required count still logs and completes its final debug/refactor phases while the
+rest of the simulation continues; the monitor ignores completed coders. If that
+compile makes every coder reach the required count, the simulation ends
+immediately and the last coder does not start another phase.
 
 ### `coders/core/log.c`
 
 Builds each log line in a fixed buffer without dynamic allocation and writes it
-with `write` while holding `log_mutex`. The manual integer formatting avoids
-additional library functions and ensures the output is deterministic.
+with `write` while holding `log_mutex`. The timestamp is also generated inside
+that critical section, so lines are printed in timestamp order. Each line is
+wrapped in an ANSI color chosen by state and reset before the newline. The manual
+integer formatting avoids additional library functions and keeps output
+deterministic.
 
 ### `coders/utils/free.c`
 
 The cleanup module. It destroys condition variables and dongle mutexes only for
-the objects that were actually initialized, destroys the global mutexes, frees the
-heap and frees all arrays. This makes both normal termination and partial
-initialization failure leak-free.
+the objects that were actually initialized, destroys the startup condition
+variable and the global mutexes, frees the heap and frees all arrays. This makes
+both normal termination and partial initialization failure leak-free.
+
+### `tests/test_battery.py`
+
+Automated test battery. It rebuilds the project, runs Norminette, checks FIFO and
+EDF runs, validates compile/debug/refactor counts and final post-compile cycles,
+verifies the two-phase startup parity, checks dongle cooldown, validates the
+state-specific ANSI color of every line, checks burnout timing and invalid
+arguments, repeats concurrent runs to expose deadlocks and builds ASan/UBSan and
+TSan variants. It also checks that every message type is exercised. Valgrind is
+executed when available. Use `--quick` to skip the sanitizers and Valgrind.
 
 ## How a simulation runs
 
 1. `parse_arg` validates the arguments and builds a zeroed `t_table`.
 2. `fill_table` initializes synchronization, the heap, the coders, the dongles and
    the thread array.
-3. `start_threads` records the start time, seeds every deadline and starts the
-   monitor and coder threads.
-4. Each coder requests a pair. Requests are inserted into the priority heap.
-5. `grant_dongles` grants pairs atomically according to FIFO or EDF.
-6. The granted coder compiles, releases both dongles, then debugs and refactors.
-7. Released dongles enter cooldown. The monitor retries grants every millisecond.
-8. The monitor also checks burnout deadlines every millisecond.
-9. The simulation ends when every coder reaches the required compile count or when
-   one coder burns out.
-10. All coder threads and the monitor are joined, then every allocated resource is
+3. `start_threads` starts the monitor and every coder thread. Each coder waits at
+   the startup gate and increments `threads_ready`.
+4. Once every coder thread exists, `open_start_gate` records the start time, seeds
+   every deadline and releases the even coder ids.
+5. Even coders request pairs, and `grant_dongles` grants them atomically. When all
+   even ids have a pair, phase 2 releases the odd ids.
+6. Later requests are inserted into the priority heap and granted according to
+   FIFO or EDF.
+7. A granted coder compiles, releases both dongles, then debugs and refactors.
+   Coders that already reached the required count finish this final post-compile
+   cycle before exiting.
+8. Released dongles enter cooldown. The monitor retries grants every millisecond.
+9. The monitor also checks burnout deadlines every millisecond.
+10. The simulation ends when every coder reaches the required compile count or
+    when one coder burns out.
+11. All coder threads and the monitor are joined, then every allocated resource is
     destroyed and freed.
 
 ## Blocking cases handled
@@ -432,9 +489,10 @@ logs the burnout immediately. This keeps the burnout message within the required
 
 ### Serialized logging
 
-Every log line is built locally first and then written while holding `log_mutex`.
-No two messages can share or interleave on the same line, regardless of how many
-coder threads and the monitor log at the same time.
+`log_mutex` is acquired before the timestamp is generated, the line is formatted
+and the whole buffer is written. No two messages can share or interleave on the
+same line, and printed timestamps are monotonic regardless of how many coder
+threads and the monitor log at the same time.
 
 ### Lost wakeups and termination races
 
@@ -448,6 +506,16 @@ starting a compilation after the end flag.
 
 The condition-variable wait is enclosed in a predicate loop
 (`while (!has_pair && !simulation_end)`), so spurious wakeups are harmless.
+
+### Startup gate
+
+Every coder increments `threads_ready` and waits on `start_cond` before its first
+request. The main thread does not open the gate until `threads_ready` equals the
+number of coders, so every thread exists before deadlines begin. Phase 1 releases
+only even coder ids; `grant_dongles` opens phase 2 once every even id has been
+granted its first pair. If the simulation ends while coders are still waiting,
+`mark_simulation_end` broadcasts `start_cond` so they leave cleanly instead of
+deadlocking.
 
 ### Single-coder configuration
 
@@ -472,6 +540,7 @@ This is the main simulation lock. It protects:
 - `simulation_end`, `burned_out`, `burned_coder_id` and `done_count`;
 - the wait heap and all scheduling decisions;
 - each coder's state, compile count, deadlines and `has_pair` flag;
+- the startup-gate counters and phase;
 - coder-to-monitor communication.
 
 It makes a dongle-pair reservation a single atomic operation. It also prevents a
@@ -494,9 +563,9 @@ deadlock.
 
 ### `pthread_mutex_t log_mutex`
 
-A dedicated output mutex. A complete line is formatted before the lock is taken,
-and then the whole line is written while the lock is held. This is what guarantees
-that log messages are serialized.
+A dedicated output mutex. The timestamp is generated, the complete line is
+formatted and the buffer is written while the lock is held. This is what
+guarantees serialized, timestamp-ordered log messages.
 
 ### Per-coder `pthread_cond_t`
 
@@ -506,6 +575,16 @@ condition variable when the simulation ends, so all waiting coders wake up and
 leave cleanly instead of blocking forever. `pthread_cond_broadcast` is used
 instead of `pthread_cond_signal` because it is the primitive explicitly authorized
 by the subject.
+
+### Global `pthread_cond_t start_cond`
+
+`start_cond` implements the startup barrier. Coders wait on it while
+`threads_ready < nb_cod` or while their parity phase is closed. The main thread
+waits until all coders report readiness, then sets the initial deadlines and
+broadcasts phase 1. `grant_dongles` broadcasts phase 2 when all even coders have
+started. All predicates (`threads_ready`, `start_phase`, `start_even_done` and
+`simulation_end`) are read under `pool_mutex`, so the gate has no data races and
+no lost wakeups.
 
 ### Condition-variable protocol
 
@@ -532,6 +611,12 @@ required by the subject.
 - **Monitor thread as a supervisor**. It both detects burnout and retries grants
   after cooldowns, so no dongle stays idle just because no coder released it at
   the exact moment its cooldown expired.
+- **Two-phase startup gate**. Even coder ids are released only after every thread
+  exists, and odd ids follow once all even ids hold their first pair. This makes
+  startup deterministic without changing later FIFO/EDF arbitration.
+- **ANSI-colored logs**. Each message is wrapped in a state-specific color and
+  reset before the newline; stripping escape sequences restores the exact subject
+  format.
 - **Short interruptible sleeps**. `sleep_ms` uses 1 ms steps, allowing the
   simulation to stop quickly when the monitor detects burnout or completion.
 - **Fixed-size log buffers**. No allocation is performed while logging, which
@@ -551,7 +636,14 @@ The project was checked with:
 ```sh
 make re
 norminette coders
+make test
 ```
+
+`tests/test_battery.py` covers valid FIFO/EDF runs, compile/debug/refactor counts,
+final post-compile cycles, startup parity, dongle cooldown, burnout timing,
+invalid arguments, per-state ANSI colors, repeated concurrent runs, ASan/UBSan,
+TSan and Valgrind. `make test-quick` skips the
+sanitizers and Valgrind for a fast functional pass.
 
 The following sanitizer build was run with several FIFO and EDF configurations,
 including burnout and single-coder cases:
@@ -563,8 +655,9 @@ cc -Wall -Wextra -Werror -I./coders -g \
 ```
 
 AddressSanitizer and UndefinedBehaviorSanitizer reported no errors and no memory
-leaks. ThreadSanitizer was also run and reported no data races. Finally, Valgrind
-reported zero errors and zero bytes still allocated:
+leaks. ThreadSanitizer was also run and reported no data races. The test battery
+repeats concurrent runs and validates every log line. Finally, Valgrind reported
+zero errors and zero bytes still allocated:
 
 ```sh
 valgrind --leak-check=full --show-leak-kinds=all \
@@ -588,8 +681,10 @@ AI assistance was used for the following tasks:
   file function counts, indentation, alignment and 42 headers.
 - Designing and reviewing the synchronization protocol around `pool_mutex`,
   per-dongle mutexes, condition variables and the logging mutex.
+- Implementing the two-phase startup gate, ANSI-colored logs and the automated
+  test battery.
 - Writing and running the sanitizer, ThreadSanitizer and Valgrind checks.
-- Drafting this README.
+- Drafting and updating this README.
 
 All generated code was reviewed and validated by compiling with the required
 flags, running Norminette, exercising FIFO and EDF scenarios, and checking the

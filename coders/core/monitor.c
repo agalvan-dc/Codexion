@@ -21,14 +21,14 @@ static bool	check_burnout(t_table *table, uint64_t now)
 	while (i < table->nb_cod)
 	{
 		coder = &table->coders[i];
-		if (coder->state != ST_DONE
+		if (!coder->completed
 			&& now >= coder->last_comp_start + table->ttb)
 		{
 			coder->state = ST_BURNT;
 			table->burned_out = true;
 			table->burned_coder_id = coder->id;
 			mark_simulation_end(table);
-			log_add(table, coder->id, "burned out");
+			log_add(table, coder->id, "burned out", CLR_BURN);
 			return (true);
 		}
 		i++;
@@ -36,29 +36,30 @@ static bool	check_burnout(t_table *table, uint64_t now)
 	return (false);
 }
 
+static bool	monitor_tick(t_table *table)
+{
+	uint64_t	now;
+	bool		stop;
+
+	pthread_mutex_lock(&table->pool_mutex);
+	stop = table->simulation_end;
+	if (!stop && table->start_phase != 0)
+	{
+		now = now_ms();
+		stop = check_burnout(table, now);
+		if (!stop)
+			grant_dongles(table, now);
+	}
+	pthread_mutex_unlock(&table->pool_mutex);
+	return (stop);
+}
+
 void	*monitor_routine(void *arg)
 {
-	t_table		*table;
-	uint64_t	now;
+	t_table	*table;
 
 	table = arg;
-	while (1)
-	{
-		pthread_mutex_lock(&table->pool_mutex);
-		if (table->simulation_end)
-		{
-			pthread_mutex_unlock(&table->pool_mutex);
-			break ;
-		}
-		now = now_ms();
-		if (check_burnout(table, now))
-		{
-			pthread_mutex_unlock(&table->pool_mutex);
-			break ;
-		}
-		grant_dongles(table, now);
-		pthread_mutex_unlock(&table->pool_mutex);
+	while (!monitor_tick(table))
 		usleep(1000);
-	}
 	return (NULL);
 }

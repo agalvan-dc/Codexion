@@ -14,7 +14,7 @@ NAME = codexion
 
 CC = cc
 
-CFLAGS = -Wall -Wextra -Werror  -I./coders -O2 -MMD -MP -pthread
+CFLAGS = -Wall -Wextra -Werror  -I./coders -O2 -MMD -MP -pthread -fsanitize=thread
 
 FT_MALLOC	?= $(HOME)/Documents/ft_malloc/libft_malloc.so
 ARGS		?= 3 1000 200 200 200 1 200 fifo
@@ -26,6 +26,7 @@ SRC	=	  coders/core/codexion.c \
 		  coders/core/log.c \
 		  coders/core/monitor.c \
 		  coders/core/simulation.c \
+		  coders/core/start_gate.c \
 		  coders/core/state.c \
 		  coders/core/time.c \
 		  coders/parse/parse.c \
@@ -71,6 +72,12 @@ run: $(NAME)
 native: $(NAME)
 	@./$(NAME) $(ARGS)
 
-.PHONY: all clean fclean re run native
+test:
+	@python3 tests/test_battery.py
+
+test-quick:
+	@python3 tests/test_battery.py --quick
+
+.PHONY: all clean fclean re run native test test-quick
 
 -include $(DEPS)
