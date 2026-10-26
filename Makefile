@@ -6,44 +6,53 @@
 #    By: agalvan- <agalvan-@student.42madrid.com>   +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2026/10/05 00:00:00 by agalvan-          #+#    #+#              #
-#    Updated: 2026/10/22 14:43:49 by agalvan-         ###   ########.fr        #
+#    Updated: 2026/10/26 20:22:00 by agalvan-         ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
-NAME = codexion
+NAME        = codexion
 
-CC = cc
+CC          = cc
+CFLAGS      = -Wall -Wextra -Werror -I./coders -O2 -MMD -MP -pthread
 
-CFLAGS = -Wall -Wextra -Werror  -I./coders -O2 -MMD -MP -pthread -fsanitize=thread
+FT_MALLOC   ?= libft_malloc.so
+ARGS        ?= 3 1000 200 200 200 1 200 fifo
 
-FT_MALLOC	?= $(HOME)/Documents/ft_malloc/libft_malloc.so
-ARGS		?= 3 1000 200 200 200 1 200 fifo
+SUPPORTED_COMMANDS := run native
+FIRST_WORD         := $(firstword $(MAKECMDGOALS))
 
-SRC	=	  coders/core/codexion.c \
-		  coders/core/coder.c \
-		  coders/core/dongle_lock.c \
-		  coders/core/dongles.c \
-		  coders/core/log.c \
-		  coders/core/monitor.c \
-		  coders/core/simulation.c \
-		  coders/core/start_gate.c \
-		  coders/core/state.c \
-		  coders/core/time.c \
-		  coders/parse/parse.c \
-		  coders/parse/parsing_utils.c \
-		  coders/parse/display.c \
-		  coders/init/init_sync.c \
-		  coders/init/init_coders.c \
-		  coders/init/init_dongles.c \
-		  coders/init/init_threads.c \
-		  coders/utils/free.c \
-		  coders/algo/heap.c \
-		  coders/algo/heap_ops.c \
+ifneq ($(filter $(FIRST_WORD),$(SUPPORTED_COMMANDS)),)
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
 
-OBJS	= $(SRC:.c=.o)
-DEPS	= $(SRC:.c=.d)
+EXEC_ARGS := $(if $(RUN_ARGS),$(RUN_ARGS),$(ARGS))
 
-MAKEFLAGS += -s
+SRC         = coders/core/codexion.c \
+              coders/core/coder.c \
+              coders/core/dongle_lock.c \
+              coders/core/dongles.c \
+              coders/core/log.c \
+              coders/core/monitor.c \
+              coders/core/simulation.c \
+              coders/core/start_gate.c \
+              coders/core/state.c \
+              coders/core/time.c \
+              coders/parse/parse.c \
+              coders/parse/parsing_utils.c \
+              coders/parse/display.c \
+              coders/init/init_sync.c \
+              coders/init/init_coders.c \
+              coders/init/init_dongles.c \
+              coders/init/init_threads.c \
+              coders/utils/free.c \
+              coders/algo/heap.c \
+              coders/algo/heap_ops.c
+
+OBJS        = $(SRC:.c=.o)
+DEPS        = $(SRC:.c=.d)
+
+MAKEFLAGS  += -s
 
 all: $(NAME)
 
@@ -67,10 +76,10 @@ run: $(NAME)
 		|| { printf "\033[0;31m[KO] falta $(FT_MALLOC)\033[0m\n"; \
 			 printf "     compila ft_malloc con: make -C $$(dirname $(FT_MALLOC))\n"; \
 			 exit 1; }
-	@LD_PRELOAD=$(FT_MALLOC) ./$(NAME) $(ARGS)
+	@LD_PRELOAD=$(FT_MALLOC) ./$(NAME) $(EXEC_ARGS)
 
 native: $(NAME)
-	@./$(NAME) $(ARGS)
+	@./$(NAME) $(EXEC_ARGS)
 
 test:
 	@python3 tests/test_battery.py
