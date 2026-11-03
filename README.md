@@ -1,5 +1,17 @@
 *This project has been created as part of the 42 curriculum by agalvan-.*
 
+<!-- ASCII banner: ANSI Shadow font, same art style as the ft_malloc README. -->
+<div align="center">
+<pre>
+ ██████╗ ██████╗ ██████╗ ███████╗██╗  ██╗██╗ ██████╗ ███╗   ██╗
+██╔════╝██╔═══██╗██╔══██╗██╔════╝╚██╗██╔╝██║██╔═══██╗████╗  ██║
+██║     ██║   ██║██║  ██║█████╗   ╚███╔╝ ██║██║   ██║██╔██╗ ██║
+██║     ██║   ██║██║  ██║██╔══╝   ██╔██╗ ██║██║   ██║██║╚██╗██║
+╚██████╗╚██████╔╝██████╔╝███████╗██╔╝ ██╗██║╚██████╔╝██║ ╚████║
+ ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝
+</pre>
+</div>
+
 # Codexion
 
 Codexion is a concurrency simulation written in C. It is a variation of the
@@ -208,6 +220,68 @@ coders/
     └── free.c
 tests/
 └── test_battery.py
+```
+
+### Flowchart
+
+The full program flow, from argument parsing to cleanup:
+
+```mermaid
+flowchart TD
+    A(["./codexion nb_cod ttb ttc ttd ttr nb_com dc scheduler"]) --> B["parse_arg()<br/>validate 8 arguments"]
+    B -->|invalid| U["show_usage()<br/>exit 1"]
+    B -->|valid| C["fill_table()<br/>init_sync · heap · coders · dongles · threads"]
+    C --> D["run_simulation()"]
+    D --> E["start_threads()<br/>spawn monitor + coder threads"]
+    E --> F{"threads_ready<br/>== nb_cod ?"}
+    F -->|no| F
+    F -->|yes| G["open_start_gate()<br/>set start_ms + initial deadlines"]
+    G --> H["Phase 1:<br/>release even coder ids"]
+    H --> I{"all even coders<br/>hold their first pair ?"}
+    I -->|no| I
+    I -->|yes| J["Phase 2:<br/>release odd coder ids"]
+    J --> K["request_dongles()<br/>push request into heap (FIFO / EDF)"]
+    K --> L{"highest-priority pair<br/>free and cooldown expired ?"}
+    L -->|no| M["wait on coder condition variable"]
+    M --> K
+    L -->|yes| N["grant_dongles()<br/>mark dongles busy + log acquisitions"]
+    N --> O["compile<br/>log 'is compiling'"]
+    O --> P["release_dongles()<br/>apply cooldown"]
+    P --> Q["debug + refactor"]
+    Q --> R{"all coders done<br/>or burnout ?"}
+    R -->|no| K
+    R -->|yes| S["mark_simulation_end()<br/>broadcast every condition variable"]
+    S --> T["join_threads()"]
+    T --> V["pthread_destroy()<br/>destroy + free every resource"]
+    V --> W(["exit 0"])
+```
+
+The monitor thread runs in parallel with the coder threads:
+
+```mermaid
+flowchart TD
+    M0(["monitor thread"]) --> M1["wait for the startup gate"]
+    M1 --> M2["loop every 1 ms"]
+    M2 --> M3{"a coder passed its<br/>burnout deadline ?"}
+    M3 -->|yes| M4["log 'burned out'<br/>mark_simulation_end()"]
+    M4 --> M5(["monitor exits"])
+    M3 -->|no| M6["grant_dongles()<br/>retry pairs after cooldown"]
+    M6 --> M2
+```
+
+Coder lifecycle:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Waiting: thread created
+    Waiting --> Compiling: pair granted
+    Compiling --> Debugging: pair released
+    Debugging --> Refactoring
+    Refactoring --> Waiting: compiles < required
+    Refactoring --> Done: compiles == required
+    Waiting --> BurnedOut: deadline exceeded
+    Done --> [*]
+    BurnedOut --> [*]
 ```
 
 ### `coders/coders.h`
@@ -660,8 +734,11 @@ cc -Wall -Wextra -Werror -I./coders -g \
 
 AddressSanitizer and UndefinedBehaviorSanitizer reported no errors and no memory
 leaks. ThreadSanitizer was also run and reported no data races. The test battery
-repeats concurrent runs and validates every log line. Finally, Valgrind reported
-zero errors and zero bytes still allocated:
+repeats concurrent runs and validates every log line. Thread-creation failure was
+also exercised with a `--wrap=pthread_create` linker wrapper, failing the monitor
+and each coder position: every case returned status 1, joined the threads that
+had started and finished without ASan/UBSan errors or leaks. Finally, Valgrind
+reported zero errors and zero bytes still allocated:
 
 ```sh
 valgrind --leak-check=full --show-leak-kinds=all \
@@ -674,19 +751,13 @@ Norminette reports every source and header file as `OK!`.
 
 AI assistance was used for the following tasks:
 
-- Reading and summarizing the project subject and extracting its mandatory
+- Reading and summarizing the project subect and extracting its mandatory
   concurrency requirements.
 - Reviewing the original implementation and identifying missing behavior: the
   absent monitor thread, the absence of real FIFO/EDF arbitration, possible
   deadlocks in pair acquisition, and unused per-dongle synchronization.
-- Proposing and implementing the module split across `algo`, `core`, `init`,
-  `parse` and `utils`.
 - Refactoring the code for 100% Norminette compliance, including function length,
   file function counts, indentation, alignment and 42 headers.
-- Designing and reviewing the synchronization protocol around `pool_mutex`,
-  per-dongle mutexes, condition variables and the logging mutex.
-- Implementing the two-phase startup gate, ANSI-colored logs and the automated
-  test battery.
 - Writing and running the sanitizer, ThreadSanitizer and Valgrind checks.
 - Drafting and updating this README.
 
@@ -707,5 +778,3 @@ Valgrind.
 - POSIX manual pages: `pthread_create(3)`, `pthread_mutex_init(3)`,
   `pthread_cond_wait(3)`, `pthread_cond_broadcast(3)`, `gettimeofday(2)`,
   `usleep(3)` and `write(2)`.
-- The 42 Norm.
-- The Codexion subject PDF included in this repository.
