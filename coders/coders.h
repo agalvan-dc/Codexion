@@ -27,11 +27,6 @@
 
 # define LOG_LINE_MAX	128
 # define CLR_RESET		"\033[0m"
-# define CLR_TAKE		"\033[36m"
-# define CLR_COMPILE	"\033[32m"
-# define CLR_DEBUG		"\033[33m"
-# define CLR_REFACTOR	"\033[34m"
-# define CLR_BURN		"\033[1;31m"
 
 typedef struct s_table	t_table;
 
@@ -117,7 +112,8 @@ bool		start_threads(t_table *table);
 void		join_threads(t_table *table);
 uint64_t	now_ms(void);
 bool		sleep_ms(t_table *table, uint64_t ms);
-void		log_add(t_table *table, int id, const char *msg, const char *color);
+size_t		put_coder_color(char *dst, int id);
+void		log_add(t_table *table, int id, const char *msg);
 bool		enter_state(t_coder *coder, t_state state, const char *msg);
 bool		wait_start_gate(t_coder *coder);
 bool		open_start_gate(t_table *table);

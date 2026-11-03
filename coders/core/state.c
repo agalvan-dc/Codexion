@@ -14,8 +14,7 @@
 
 bool	enter_state(t_coder *coder, t_state state, const char *msg)
 {
-	t_table		*table;
-	const char	*color;
+	t_table	*table;
 
 	table = coder->table;
 	pthread_mutex_lock(&table->pool_mutex);
@@ -24,13 +23,8 @@ bool	enter_state(t_coder *coder, t_state state, const char *msg)
 		pthread_mutex_unlock(&table->pool_mutex);
 		return (false);
 	}
-	color = CLR_COMPILE;
-	if (state == ST_DEBUG)
-		color = CLR_DEBUG;
-	if (state == ST_REFACTOR)
-		color = CLR_REFACTOR;
 	coder->state = state;
-	log_add(table, coder->id, msg, color);
+	log_add(table, coder->id, msg);
 	pthread_mutex_unlock(&table->pool_mutex);
 	return (true);
 }

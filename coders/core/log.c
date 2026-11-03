@@ -75,13 +75,13 @@ static void	write_all(const char *buf, size_t len)
 	}
 }
 
-void	log_add(t_table *table, int id, const char *msg, const char *color)
+void	log_add(t_table *table, int id, const char *msg)
 {
 	char	line[LOG_LINE_MAX];
 	size_t	len;
 
 	pthread_mutex_lock(&table->log_mutex);
-	len = put_str(line, color);
+	len = put_coder_color(line, id);
 	len += put_uint(line + len, now_ms() - table->start_ms);
 	line[len++] = ' ';
 	len += put_int(line + len, id);

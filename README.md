@@ -167,10 +167,12 @@ Timestamps are relative to the start of the simulation. Every line is written by
 a single thread while holding the logging mutex, so lines are never interleaved.
 
 Each line is wrapped in an ANSI color sequence and reset with `\033[0m` before
-the newline. Removing the escape sequences yields exactly the format above.
-Dongle acquisitions are cyan, compiling is green, debugging is yellow,
-refactoring is blue and burnout is bold red. The timestamp is generated while
-the logging mutex is held, so printed timestamps are monotonic.
+the newline. Removing the escape sequences yields exactly the format above. The
+color is derived only from the coder id, so every line belonging to a coder uses
+the same color regardless of its state. The 256-color palette index is
+`100 + (id * 37) % 132`, which gives up to 132 distinct coder colors before the
+palette cycles. The timestamp is generated while the logging mutex is held, so
+printed timestamps are monotonic.
 
 ## Project structure
 
@@ -187,6 +189,7 @@ coders/
 │   ├── dongle_lock.c
 │   ├── dongles.c
 │   ├── log.c
+│   ├── log_color.c
 │   ├── monitor.c
 │   ├── simulation.c
 │   ├── start_gate.c
@@ -403,9 +406,10 @@ immediately and the last coder does not start another phase.
 Builds each log line in a fixed buffer without dynamic allocation and writes it
 with `write` while holding `log_mutex`. The timestamp is also generated inside
 that critical section, so lines are printed in timestamp order. Each line is
-wrapped in an ANSI color chosen by state and reset before the newline. The manual
-integer formatting avoids additional library functions and keeps output
-deterministic.
+wrapped in an ANSI color chosen by coder id and reset before the newline. The
+manual integer formatting avoids additional library functions and keeps output
+deterministic. `put_coder_color` writes the ANSI prefix from the coder id, so all
+messages from one coder share the same color.
 
 ### `coders/utils/free.c`
 
@@ -419,7 +423,7 @@ both normal termination and partial initialization failure leak-free.
 Automated test battery. It rebuilds the project, runs Norminette, checks FIFO and
 EDF runs, validates compile/debug/refactor counts and final post-compile cycles,
 verifies the two-phase startup parity, checks dongle cooldown, validates the
-state-specific ANSI color of every line, checks burnout timing and invalid
+per-coder-id ANSI color of every line, checks burnout timing and invalid
 arguments, repeats concurrent runs to expose deadlocks and builds ASan/UBSan and
 TSan variants. It also checks that every message type is exercised. Valgrind is
 executed when available. Use `--quick` to skip the sanitizers and Valgrind.
@@ -614,9 +618,9 @@ required by the subject.
 - **Two-phase startup gate**. Even coder ids are released only after every thread
   exists, and odd ids follow once all even ids hold their first pair. This makes
   startup deterministic without changing later FIFO/EDF arbitration.
-- **ANSI-colored logs**. Each message is wrapped in a state-specific color and
-  reset before the newline; stripping escape sequences restores the exact subject
-  format.
+- **ANSI-colored logs**. Each message is wrapped in a color derived from the
+  coder id and reset before the newline; all lines from one coder share a color,
+  and stripping escape sequences restores the exact subject format.
 - **Short interruptible sleeps**. `sleep_ms` uses 1 ms steps, allowing the
   simulation to stop quickly when the monitor detects burnout or completion.
 - **Fixed-size log buffers**. No allocation is performed while logging, which
@@ -641,8 +645,8 @@ make test
 
 `tests/test_battery.py` covers valid FIFO/EDF runs, compile/debug/refactor counts,
 final post-compile cycles, startup parity, dongle cooldown, burnout timing,
-invalid arguments, per-state ANSI colors, repeated concurrent runs, ASan/UBSan,
-TSan and Valgrind. `make test-quick` skips the
+invalid arguments, per-coder-id ANSI colors, repeated concurrent runs,
+ASan/UBSan, TSan and Valgrind. `make test-quick` skips the
 sanitizers and Valgrind for a fast functional pass.
 
 The following sanitizer build was run with several FIFO and EDF configurations,

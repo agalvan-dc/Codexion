@@ -15,7 +15,7 @@ NAME        = codexion
 CC          = cc
 CFLAGS      = -Wall -Wextra -Werror -I./coders -O2 -MMD -MP -pthread
 
-FT_MALLOC   ?= libft_malloc.so
+FT_MALLOC   ?= ./libft_malloc.so
 ARGS        ?= 3 1000 200 200 200 1 200 fifo
 
 SUPPORTED_COMMANDS := run native
@@ -33,6 +33,7 @@ SRC         = coders/core/codexion.c \
               coders/core/dongle_lock.c \
               coders/core/dongles.c \
               coders/core/log.c \
+              coders/core/log_color.c \
               coders/core/monitor.c \
               coders/core/simulation.c \
               coders/core/start_gate.c \

@@ -19,15 +19,13 @@ MESSAGES = {
     "is refactoring",
     "burned out",
 }
-COLOR_MAP = {
-    "has taken a dongle": "\x1b[36m",
-    "is compiling": "\x1b[32m",
-    "is debugging": "\x1b[33m",
-    "is refactoring": "\x1b[34m",
-    "burned out": "\x1b[1;31m",
-}
 FAILURES = []
 OBSERVED_MESSAGES = set()
+OBSERVED_COLORS = {}
+
+
+def coder_color(coder_id):
+    return f"\x1b[38;5;{100 + (coder_id * 37) % 132}m"
 
 
 def check(condition, label):
@@ -105,16 +103,19 @@ def check_colors(name, raw):
             bad.append(line)
             continue
         clean = ANSI.sub("", line)
-        message = clean.split(" ", 2)[2]
-        expected = COLOR_MAP.get(message)
+        coder_id = int(clean.split(" ", 2)[1])
+        expected = coder_color(coder_id)
         if match.group(1) != expected:
             bad.append(line)
-        seen[message] = match.group(1)
-    check(not bad, f"{name}: every line uses its state color")
+        if coder_id in seen and seen[coder_id] != match.group(1):
+            bad.append(line)
+        seen[coder_id] = match.group(1)
+    check(not bad, f"{name}: every line uses its coder color")
     for line in bad[:5]:
         print(f"        bad color: {line!r}")
     check(len(set(seen.values())) == len(seen),
-          f"{name}: observed colors are distinct")
+          f"{name}: coder colors are distinct")
+    OBSERVED_COLORS.update(seen)
     return seen
 
 
@@ -122,9 +123,9 @@ def scenario(name, args, compiles, burnout=False, exact_post=False, timeout=30):
     print(f"[scenario] {name}")
     result = run([BIN, *args], timeout=timeout)
     check(result.returncode == 0, f"{name}: exit code 0")
-    seen = check_colors(name, result.stdout)
-    OBSERVED_MESSAGES.update(seen)
+    check_colors(name, result.stdout)
     events = parse_events(result.stdout)
+    OBSERVED_MESSAGES.update(event[2] for event in events)
     burned = [event for event in events if event[2] == "burned out"]
     taken = [event for event in events if event[2] == "has taken a dongle"]
     compiling = [event for event in events if event[2] == "is compiling"]
@@ -375,8 +376,8 @@ def main():
         sanitizers()
         valgrind()
 
-    check(len(set(COLOR_MAP.values())) == len(COLOR_MAP),
-          "all five message types have distinct colors")
+    check(len(set(OBSERVED_COLORS.values())) == len(OBSERVED_COLORS),
+          "every observed coder id has a distinct color")
     check(MESSAGES <= OBSERVED_MESSAGES, "battery exercises every message type")
     print()
     if FAILURES:

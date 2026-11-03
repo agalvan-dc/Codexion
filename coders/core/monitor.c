@@ -28,7 +28,7 @@ static bool	check_burnout(t_table *table, uint64_t now)
 			table->burned_out = true;
 			table->burned_coder_id = coder->id;
 			mark_simulation_end(table);
-			log_add(table, coder->id, "burned out", CLR_BURN);
+			log_add(table, coder->id, "burned out");
 			return (true);
 		}
 		i++;
